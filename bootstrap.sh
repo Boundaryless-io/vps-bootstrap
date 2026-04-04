@@ -249,8 +249,12 @@ AllowUsers ${USERNAME}
 SSHEOF
 
     # Validate config before restarting
+    # Ubuntu 24.04 uses ssh.service, not sshd.service
+    SSH_SERVICE="ssh"
+    systemctl list-unit-files sshd.service &>/dev/null && SSH_SERVICE="sshd"
+
     if sshd -t 2>/dev/null; then
-        systemctl restart sshd
+        systemctl restart "$SSH_SERVICE"
         ok "SSH hardened (port ${SSH_PORT}, root login disabled)"
         if [[ -n "$SSH_PUBLIC_KEY" ]]; then
             ok "Password auth disabled (SSH key provided)"
