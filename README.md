@@ -6,10 +6,10 @@ Identity-free VPS foundation for Ubuntu 24.04. Hardens the system, installs runt
 
 ```bash
 # Minimal (creates user "dev", no SSH key)
-curl -sSL https://raw.githubusercontent.com/meaning-systems/vps-bootstrap/main/bootstrap.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/Boundaryless-io/vps-bootstrap/main/bootstrap.sh | sudo bash
 
 # Full (recommended)
-curl -sSL https://raw.githubusercontent.com/meaning-systems/vps-bootstrap/main/bootstrap.sh | sudo bash -s -- \
+curl -sSL https://raw.githubusercontent.com/Boundaryless-io/vps-bootstrap/main/bootstrap.sh | sudo bash -s -- \
   --user neno \
   --ssh-key "ssh-ed25519 AAAA..." \
   --hostname mybox \

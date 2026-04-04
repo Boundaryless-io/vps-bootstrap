@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # ============================================================================
 # vps-bootstrap — Identity-free VPS foundation for Ubuntu 24.04
-# https://github.com/meaning-systems/vps-bootstrap
+# https://github.com/Boundaryless-io/vps-bootstrap
 #
 # Usage:
-#   curl -sSL https://raw.githubusercontent.com/meaning-systems/vps-bootstrap/main/bootstrap.sh | sudo bash
-#   curl -sSL https://raw.githubusercontent.com/meaning-systems/vps-bootstrap/main/bootstrap.sh | sudo bash -s -- \
+#   curl -sSL https://raw.githubusercontent.com/Boundaryless-io/vps-bootstrap/main/bootstrap.sh | sudo bash
+#   curl -sSL https://raw.githubusercontent.com/Boundaryless-io/vps-bootstrap/main/bootstrap.sh | sudo bash -s -- \
 #     --user neno --ssh-key "ssh-ed25519 AAAA..." --hostname mybox --timezone Europe/Rome
 #
 # This script is PUBLIC and contains NO secrets. It:
@@ -482,7 +482,7 @@ cat > /etc/motd <<'MOTDEOF'
 
   ╔══════════════════════════════════════════╗
   ║  VPS bootstrapped by vps-bootstrap       ║
-  ║  github.com/meaning-systems/vps-bootstrap║
+  ║  github.com/Boundaryless-io/vps-bootstrap║
   ╚══════════════════════════════════════════╝
 
 MOTDEOF
