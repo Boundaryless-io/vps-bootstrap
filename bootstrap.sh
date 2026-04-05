@@ -567,7 +567,7 @@ echo -e "  ${GREEN}✓${NC} Node.js + Python + uv installed"
 echo -e "  ${GREEN}✓${NC} AI agents: Claude Code, Codex, Gemini CLI, OpenCode, Hermes"
 echo -e "  ${GREEN}✓${NC} Zsh + oh-my-zsh configured"
 echo ""
-VPS_IP=$(curl -s --max-time 5 ifconfig.me 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}' || echo '<IP>')
+VPS_IP=$(curl -4s --max-time 5 ifconfig.me 2>/dev/null || hostname -I 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' | head -1 || echo '<IP>')
 echo -e "  ${YELLOW}Next steps:${NC}"
 echo -e "  ${CYAN}1.${NC} ${YELLOW}KEEP THIS ROOT SESSION OPEN.${NC} In a new terminal:"
 echo -e "     ${BLUE}ssh ${USERNAME}@${VPS_IP} -p ${SSH_PORT}${NC}"
