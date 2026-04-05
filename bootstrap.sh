@@ -219,7 +219,13 @@ if [[ "$SKIP_HARDENING" == true ]]; then
     step "SSH hardening"
     skip "Hardening skipped (--skip-hardening)"
 else
-    step "SSH hardening"
+    step "SSH hardening (phase 1 — safe)"
+
+    # SAFETY: We do NOT disable root login or password auth during curl|bash.
+    # That's how you get locked out of a fresh VPS.
+    #
+    # Phase 1 (now):  Install key for user, keep root + password alive
+    # Phase 2 (later): Run 'sudo vps-harden' after verifying SSH as user
 
     SSHD_CONFIG="/etc/ssh/sshd_config"
 
@@ -229,15 +235,73 @@ else
         ok "Original sshd_config backed up"
     fi
 
-    # Write hardened config
+    # Write SAFE config — root stays accessible, password stays on
     cat > /etc/ssh/sshd_config.d/99-bootstrap.conf <<SSHEOF
-# vps-bootstrap hardening — $(date -Iseconds)
+# vps-bootstrap phase 1 — safe defaults
+# Root and password auth intentionally KEPT ALIVE.
+# Run 'sudo vps-harden' after verifying SSH as ${USERNAME}.
+Port ${SSH_PORT}
+PermitRootLogin prohibit-password
+MaxAuthTries 5
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+PasswordAuthentication yes
+PermitEmptyPasswords no
+ChallengeResponseAuthentication no
+UsePAM yes
+X11Forwarding no
+PrintMotd no
+ClientAliveInterval 300
+ClientAliveCountMax 2
+SSHEOF
+
+    # Detect SSH service name (Ubuntu 24.04 = ssh, others = sshd)
+    SSH_SERVICE="ssh"
+    systemctl list-unit-files sshd.service &>/dev/null && SSH_SERVICE="sshd"
+
+    if sshd -t 2>/dev/null; then
+        systemctl restart "$SSH_SERVICE" 2>/dev/null || true
+        # Verify SSH is actually running after restart
+        sleep 1
+        if systemctl is-active "$SSH_SERVICE" &>/dev/null; then
+            ok "SSH configured (port ${SSH_PORT}, root+password still available)"
+        else
+            # SSH died — revert immediately
+            rm -f /etc/ssh/sshd_config.d/99-bootstrap.conf
+            systemctl restart "$SSH_SERVICE" 2>/dev/null || true
+            warn "SSH restart failed — reverted to defaults"
+        fi
+    else
+        rm -f /etc/ssh/sshd_config.d/99-bootstrap.conf
+        warn "SSH config validation failed — reverted, using defaults"
+    fi
+
+    # Install the hardening script for phase 2
+    cat > /usr/local/bin/vps-harden <<HARDENEOF
+#!/usr/bin/env bash
+# Phase 2: Lock down SSH after verifying access as ${USERNAME}
+set -euo pipefail
+[[ \$EUID -ne 0 ]] && { echo "Run with sudo"; exit 1; }
+
+echo "This will:"
+echo "  • Disable root SSH login"
+echo "  • Disable password authentication"
+echo "  • Restrict SSH to user: ${USERNAME}"
+echo ""
+echo "BEFORE PROCEEDING: Open a second terminal and verify:"
+echo "  ssh ${USERNAME}@\$(hostname -I | awk '{print \$1}') -p ${SSH_PORT}"
+echo ""
+read -p "Can you SSH as ${USERNAME}? [y/N] " -r
+[[ ! \$REPLY =~ ^[Yy]\$ ]] && { echo "Aborted."; exit 1; }
+
+cat > /etc/ssh/sshd_config.d/99-bootstrap.conf <<EOF
+# vps-bootstrap phase 2 — hardened
 Port ${SSH_PORT}
 PermitRootLogin no
 MaxAuthTries 3
 PubkeyAuthentication yes
 AuthorizedKeysFile .ssh/authorized_keys
-PasswordAuthentication $([ -n "$SSH_PUBLIC_KEY" ] && echo "no" || echo "yes")
+PasswordAuthentication no
 PermitEmptyPasswords no
 ChallengeResponseAuthentication no
 UsePAM yes
@@ -246,25 +310,22 @@ PrintMotd no
 ClientAliveInterval 300
 ClientAliveCountMax 2
 AllowUsers ${USERNAME}
-SSHEOF
+EOF
 
-    # Validate config before restarting
-    # Ubuntu 24.04 uses ssh.service, not sshd.service
-    SSH_SERVICE="ssh"
-    systemctl list-unit-files sshd.service &>/dev/null && SSH_SERVICE="sshd"
+SSH_SVC="ssh"
+systemctl list-unit-files sshd.service &>/dev/null && SSH_SVC="sshd"
 
-    if sshd -t 2>/dev/null; then
-        systemctl restart "$SSH_SERVICE"
-        ok "SSH hardened (port ${SSH_PORT}, root login disabled)"
-        if [[ -n "$SSH_PUBLIC_KEY" ]]; then
-            ok "Password auth disabled (SSH key provided)"
-        else
-            warn "Password auth still enabled (no SSH key provided)"
-        fi
-    else
-        rm -f /etc/ssh/sshd_config.d/99-bootstrap.conf
-        fail "SSH config validation failed — reverted changes"
-    fi
+if sshd -t 2>/dev/null; then
+    systemctl restart "\$SSH_SVC"
+    echo "✓ SSH hardened. Root disabled, password disabled, only ${USERNAME} allowed."
+else
+    rm -f /etc/ssh/sshd_config.d/99-bootstrap.conf
+    echo "✗ Config validation failed — reverted."
+    exit 1
+fi
+HARDENEOF
+    chmod +x /usr/local/bin/vps-harden
+    ok "Installed /usr/local/bin/vps-harden for phase 2 lockdown"
 
     # ========================================================================
     # 6. Firewall (UFW)
@@ -500,21 +561,26 @@ echo -e "${GREEN}╔════════════════════
 echo -e "${GREEN}║${NC}                  ${BLUE}Bootstrap Complete${NC}                      ${GREEN}║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "  ${GREEN}✓${NC} System hardened (SSH, UFW, fail2ban)"
-echo -e "  ${GREEN}✓${NC} User ${BLUE}${USERNAME}${NC} created with sudo"
+echo -e "  ${GREEN}✓${NC} System configured (UFW, fail2ban, swap, auto-updates)"
+echo -e "  ${GREEN}✓${NC} User ${BLUE}${USERNAME}${NC} created with sudo + SSH key"
 echo -e "  ${GREEN}✓${NC} Node.js + Python + uv installed"
 echo -e "  ${GREEN}✓${NC} AI agents: Claude Code, Codex, Gemini CLI, OpenCode, Hermes"
 echo -e "  ${GREEN}✓${NC} Zsh + oh-my-zsh configured"
 echo ""
+VPS_IP=$(curl -s --max-time 5 ifconfig.me 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}' || echo '<IP>')
 echo -e "  ${YELLOW}Next steps:${NC}"
-echo -e "  ${CYAN}1.${NC} SSH in as the new user:"
-echo -e "     ${BLUE}ssh ${USERNAME}@$(curl -s ifconfig.me 2>/dev/null || echo '<IP>') -p ${SSH_PORT}${NC}"
+echo -e "  ${CYAN}1.${NC} ${YELLOW}KEEP THIS ROOT SESSION OPEN.${NC} In a new terminal:"
+echo -e "     ${BLUE}ssh ${USERNAME}@${VPS_IP} -p ${SSH_PORT}${NC}"
 echo ""
-echo -e "  ${CYAN}2.${NC} Apply your identity (API keys, configs):"
+echo -e "  ${CYAN}2.${NC} Once you're in as ${USERNAME}, lock down SSH:"
+echo -e "     ${BLUE}sudo vps-harden${NC}"
+echo -e "     (disables root login + password auth)"
+echo ""
+echo -e "  ${CYAN}3.${NC} Apply your identity (API keys, configs):"
 echo -e "     Clone your private identity repo and run apply.sh"
 echo ""
-echo -e "  ${CYAN}3.${NC} Provision additional users:"
+echo -e "  ${CYAN}4.${NC} Provision additional users:"
 echo -e "     Clone your private users repo and run provision.sh"
 echo ""
-echo -e "  ${YELLOW}⚠  Root login is now DISABLED. Make sure you can SSH as ${USERNAME}.${NC}"
+echo -e "  ${GREEN}ℹ  Root + password auth still work until you run vps-harden.${NC}"
 echo ""
